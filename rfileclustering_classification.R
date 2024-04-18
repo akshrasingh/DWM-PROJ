@@ -7,7 +7,7 @@ library(fpc)
 set.seed(123)
 
 # Load the data
-customer <- read.csv("C:/Users/Akshra_/Downloads/Mall_Customers (2).csv", stringsAsFactors = TRUE)
+customer <- read.csv("C:\Users\Asus\Downloads\Mall_Customers (2).csv", stringsAsFactors = TRUE)
 
 # Select relevant columns (Annual Income and Spending Score)
 customer <- customer[, 4:5]
@@ -89,3 +89,50 @@ if (sil_width_kmeans > sil_width_hierarchical && sil_width_kmeans > sil_width_db
   cat("DBSCAN clustering yields the highest silhouette width, indicating better clustering quality.\n")
 }
 
+# Load required libraries
+library(tidyverse)
+library(cluster)
+library(fpc)
+library(class)
+
+# Set seed for reproducibility
+set.seed(123)
+
+customer <- read.csv("C:/Users/Asus/Downloads/Mall_Customers (2).csv", stringsAsFactors = TRUE)
+
+
+# Select relevant columns (Annual Income and Spending Score)
+customer <- customer[, 4:5]
+
+# Perform k-means clustering with k=3
+kmeans_model <- kmeans(customer, centers = 3)
+
+# Perform hierarchical clustering
+hierarchical_model <- hclust(dist(customer))
+
+# Cut the dendrogram to obtain clusters
+hierarchical_clusters <- cutree(hierarchical_model, k = 3)
+
+# Perform DBSCAN clustering
+dbscan_model <- dbscan(customer, eps = 3, MinPts = 5)
+
+# Combine the clustered results with the original data
+customer_clustered <- cbind(customer, Kmeans_Cluster = kmeans_model$cluster)
+
+# Split the data into training and testing sets
+set.seed(123) # For reproducibility
+train_index <- sample(1:nrow(customer_clustered), 0.7 * nrow(customer_clustered))
+train_data <- customer_clustered[train_index, ]
+test_data <- customer_clustered[-train_index, ]
+
+# Define features (Annual Income and Spending Score) and target (Kmeans_Cluster)
+features <- names(train_data)[1:2]
+target <- "Kmeans_Cluster"
+
+# Train the KNN model
+k <- 5 # Number of neighbors
+knn_model <- knn(train = train_data[features], test = test_data[features], cl = train_data[[target]], k = k)
+
+# Evaluate the model
+accuracy <- mean(knn_model == test_data[[target]])
+cat("Accuracy of KNN model:", accuracy, "\n")
