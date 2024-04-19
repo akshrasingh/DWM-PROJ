@@ -137,7 +137,6 @@ knn_model <- knn(train = train_data[features], test = test_data[features], cl = 
 accuracy <- mean(knn_model == test_data[[target]])
 cat("Accuracy of KNN model:", accuracy, "\n")
 
-
 # Train the Random Forest model
 rf_model <- randomForest(as.factor(Kmeans_Cluster) ~ ., data = train_data, ntree = 500, importance = TRUE)
 
@@ -147,3 +146,43 @@ rf_pred <- predict(rf_model, test_data[, 1:2])
 # Evaluate the Random Forest model
 accuracy_rf <- mean(rf_pred == test_data[[target]])
 cat("Accuracy of Random Forest model:", accuracy_rf, "\n")
+
+# Davies-Bouldin Index for Random Forest
+rf_clusters <- as.integer(rf_pred)
+db_rf <- cluster.stats(dist(test_data[, 1:2]), rf_clusters)$dunn
+cat("Davies-Bouldin Index for Random Forest:", db_rf, "\n")
+
+# Davies-Bouldin Index for KNN
+knn_clusters <- as.integer(knn_model)
+db_knn <- cluster.stats(dist(test_data[, 1:2]), knn_clusters)$dunn
+cat("Davies-Bouldin Index for KNN:", db_knn, "\n")
+
+# Confusion Matrix for KNN
+confusionMatrix(knn_model, test_data[[target]])
+
+# Confusion Matrix for Random Forest
+confusionMatrix(rf_pred, test_data[[target]])
+
+# Plot decision boundaries for KNN and Random Forest
+plot1 <- ggplot(train_data, aes(x = customer[, 1], y = customer[, 2], color = as.factor(Kmeans_Cluster))) +
+  geom_point() +
+  geom_point(data = test_data, aes(x = test_data[, 1], y = test_data[, 2], color = as.factor(knn_clusters + 1)), pch = 20) +
+  ggtitle("KNN Decision Boundaries") +
+  labs(color = "Cluster") +
+  theme_minimal()
+
+plot2 <- ggplot(train_data, aes(x = customer[, 1], y = customer[, 2], color = as.factor(Kmeans_Cluster))) +
+  geom_point() +
+  geom_point(data = test_data, aes(x = test_data[, 1], y = test_data[, 2], color = as.factor(rf_clusters + 1)), pch = 20) +
+  ggtitle("Random Forest Decision Boundaries") +
+  labs(color = "Cluster") +
+  theme_minimal()
+
+# Display the plots side by side
+grid.arrange(plot1, plot2, ncol = 2)
+
+# Print feature importance for Random Forest
+importance(rf_model)
+
+# Plot Random Forest variable importance
+varImpPlot(rf_model, main = "Random Forest Variable Importance")
