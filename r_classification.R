@@ -35,25 +35,46 @@ test_data <- stroke_data[-train_index, ]
 # Define target variable
 target <- "stroke"
 
-# Random Sampling
-n <- nrow(train_data)
-bootstrap_sample <- sample(1:n, replace = TRUE, size = n)
+# Random Forest Implementation Steps:
 
-# Random Feature Selection
+# Set parameters
+n <- nrow(train_data)
 p <- ncol(train_data) - 1  # Exclude target variable
 m <- round(sqrt(p))  # Square root of total features is often used
-selected_features <- sample(1:p, size = m)
+ntree <- 500  # Number of trees
+
+# Initialize an empty list to store decision trees
+trees <- list()
 
 # Train the Random Forest model
-rf_model <- randomForest(
-  formula = as.factor(stroke) ~ .,
-  data = train_data[bootstrap_sample, selected_features],
-  ntree = 500,
-  importance = TRUE
-)
+for (i in 1:ntree) {
+  # Random Sampling
+  bootstrap_sample <- sample(1:n, replace = TRUE, size = n)
+  
+  # Random Feature Selection
+  selected_features <- sample(1:p, size = m)
+  
+  # Decision Tree Construction
+  tree <- randomForest(
+    formula = as.factor(stroke) ~ .,
+    data = train_data[bootstrap_sample, selected_features],
+    ntree = 1,
+    importance = FALSE,
+    do.trace = FALSE
+  )
+  
+  # Store the decision tree
+  trees[[i]] <- tree
+}
 
-# Predict using the Random Forest model
-rf_pred <- predict(rf_model, test_data)
+# Ensemble Prediction (Voting)
+rf_pred <- matrix(0, nrow = nrow(test_data), ncol = ntree)
+for (i in 1:ntree) {
+  rf_pred[, i] <- predict(trees[[i]], newdata = test_data)
+}
+rf_pred <- apply(rf_pred, 1, function(x) {
+  as.factor(names(sort(table(x), decreasing = TRUE)[1]))
+})
 
 # Evaluate the Random Forest model
 accuracy_rf <- mean(rf_pred == test_data[[target]])
@@ -68,7 +89,7 @@ cat("Davies-Bouldin Index for Random Forest:", db_rf, "\n")
 confusionMatrix(rf_pred, test_data[[target]])
 
 # Plot Random Forest variable importance
-varImpPlot(rf_model, main = "Random Forest Variable Importance")
+varImpPlot(randomForest(as.factor(stroke) ~ ., data = train_data, ntree = ntree, importance = TRUE), main = "Random Forest Variable Importance")
 
 # Plot decision boundaries for Random Forest
 plot2 <- ggplot(train_data, aes(x = train_data[, 1], y = train_data[, 2], color = as.factor(Kmeans_Cluster))) +
