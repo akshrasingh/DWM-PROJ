@@ -35,8 +35,22 @@ test_data <- stroke_data[-train_index, ]
 # Define target variable
 target <- "stroke"
 
+# Random Sampling
+n <- nrow(train_data)
+bootstrap_sample <- sample(1:n, replace = TRUE, size = n)
+
+# Random Feature Selection
+p <- ncol(train_data) - 1  # Exclude target variable
+m <- round(sqrt(p))  # Square root of total features is often used
+selected_features <- sample(1:p, size = m)
+
 # Train the Random Forest model
-rf_model <- randomForest(as.factor(stroke) ~ ., data = train_data, ntree = 500, importance = TRUE)
+rf_model <- randomForest(
+  formula = as.factor(stroke) ~ .,
+  data = train_data[bootstrap_sample, selected_features],
+  ntree = 500,
+  importance = TRUE
+)
 
 # Predict using the Random Forest model
 rf_pred <- predict(rf_model, test_data)
@@ -50,26 +64,14 @@ rf_clusters <- as.integer(rf_pred)
 db_rf <- cluster.stats(dist(test_data[, 1:2]), rf_clusters)$dunn
 cat("Davies-Bouldin Index for Random Forest:", db_rf, "\n")
 
-# Davies-Bouldin Index for KNN
-knn_clusters <- as.integer(knn_model)
-db_knn <- cluster.stats(dist(test_data[, 1:2]), knn_clusters)$dunn
-cat("Davies-Bouldin Index for KNN:", db_knn, "\n")
-
-# Confusion Matrix for KNN
-confusionMatrix(knn_model, test_data[[target]])
-
 # Confusion Matrix for Random Forest
 confusionMatrix(rf_pred, test_data[[target]])
 
-# Plot decision boundaries for KNN and Random Forest
-plot1 <- ggplot(train_data, aes(x = customer[, 1], y = customer[, 2], color = as.factor(Kmeans_Cluster))) +
-  geom_point() +
-  geom_point(data = test_data, aes(x = test_data[, 1], y = test_data[, 2], color = as.factor(knn_clusters + 1)), pch = 20) +
-  ggtitle("KNN Decision Boundaries") +
-  labs(color = "Cluster") +
-  theme_minimal()
+# Plot Random Forest variable importance
+varImpPlot(rf_model, main = "Random Forest Variable Importance")
 
-plot2 <- ggplot(train_data, aes(x = customer[, 1], y = customer[, 2], color = as.factor(Kmeans_Cluster))) +
+# Plot decision boundaries for Random Forest
+plot2 <- ggplot(train_data, aes(x = train_data[, 1], y = train_data[, 2], color = as.factor(Kmeans_Cluster))) +
   geom_point() +
   geom_point(data = test_data, aes(x = test_data[, 1], y = test_data[, 2], color = as.factor(rf_clusters + 1)), pch = 20) +
   ggtitle("Random Forest Decision Boundaries") +
@@ -77,10 +79,4 @@ plot2 <- ggplot(train_data, aes(x = customer[, 1], y = customer[, 2], color = as
   theme_minimal()
 
 # Display the plots side by side
-grid.arrange(plot1, plot2, ncol = 2)
-
-# Print feature importance for Random Forest
-importance(rf_model)
-
-# Plot Random Forest variable importance
-varImpPlot(rf_model, main = "Random Forest Variable Importance")
+grid.arrange(plot2, ncol = 1)
