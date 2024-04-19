@@ -136,3 +136,14 @@ knn_model <- knn(train = train_data[features], test = test_data[features], cl = 
 # Evaluate the model
 accuracy <- mean(knn_model == test_data[[target]])
 cat("Accuracy of KNN model:", accuracy, "\n")
+
+
+# Train the Random Forest model
+rf_model <- randomForest(as.factor(Kmeans_Cluster) ~ ., data = train_data, ntree = 500, importance = TRUE)
+
+# Predict using the Random Forest model
+rf_pred <- predict(rf_model, test_data[, 1:2])
+
+# Evaluate the Random Forest model
+accuracy_rf <- mean(rf_pred == test_data[[target]])
+cat("Accuracy of Random Forest model:", accuracy_rf, "\n")
