@@ -10,7 +10,7 @@ library(gridExtra)
 set.seed(123)
 
 # Load the data
-stroke_data <- read.csv("stroke_data.csv")
+stroke_data <- read.csv("C:\Users\charv\Downloads\stroke_data.csv")
 
 # Data preprocessing
 # Drop ID column
