@@ -173,6 +173,38 @@ knn_predictions_binary <- ifelse(knn_model == "Yes", 1, 0)
 accuracy <- mean(knn_predictions_binary == test_data$stroke)
 print(paste("Accuracy of KNN model:", round(accuracy * 100, 2), "%"))
 
+### Graphs:
+
+# Scatter Plot
+scatter_plot <- plot_ly(train_data, x = ~age, y = ~avg_glucose_level, type = "scatter", mode = "markers", color = ~factor(stroke)) %>%
+  layout(title = "Scatter Plot of Age vs Avg Glucose Level",
+         xaxis = list(title = "Age"),
+         yaxis = list(title = "Avg Glucose Level"),
+         showlegend = TRUE)
+
+# Histogram
+histogram <- plot_ly(train_data, x = ~bmi, type = "histogram", marker = list(color = "#636EFA")) %>%
+  layout(title = "Histogram of BMI",
+         xaxis = list(title = "BMI"),
+         yaxis = list(title = "Frequency"))
+
+### Confusion Matrix:
+
+# Confusion matrix for KNN model
+conf_matrix <- table(Actual = test_data$stroke, Predicted = knn_predictions_binary)
+
+# Plotting confusion matrix
+plot_confusion_matrix <- function(conf_matrix) {
+  conf_matrix %>%
+    as.data.frame() %>%
+    plot_ly(x = ~Actual, y = ~Predicted, z = ~Freq, type = "heatmap", colors = c("#FFA07A", "#20B2AA")) %>%
+    layout(title = "Confusion Matrix",
+           xaxis = list(title = "Actual"),
+           yaxis = list(title = "Predicted"))
+}
+
+plot_confusion_matrix(conf_matrix)
+
 # Importing packages
 library(plotly)
 library(tensorflow)
