@@ -173,3 +173,140 @@ knn_predictions_binary <- ifelse(knn_model == "Yes", 1, 0)
 accuracy <- mean(knn_predictions_binary == test_data$stroke)
 print(paste("Accuracy of KNN model:", round(accuracy * 100, 2), "%"))
 
+# Importing packages
+library(plotly)
+library(tensorflow)
+library(pROC)
+library(tidyverse)
+library(naniar)
+library(caTools)
+library(ggplot2)
+library(superheat)
+library(scatterplot3d)
+library(ROCR)
+library(Metrics)
+library(keras)
+library(caret)
+library(ROSE)
+library(reshape2)
+library(magrittr)
+library(dplyr)
+
+
+
+#reading the csv file
+data = read.csv("C:\\Users\\Dimple\\OneDrive\\Desktop\\DWM PROJECT\\healthcare-dataset-stroke-data.xlsx")
+str(data)
+
+
+# Converting character values to numeric values
+
+clean_data <- data %>% mutate(gender = if_else(gender == "Female", 0, if_else(gender == "Male", 1, 2)), ever_married = if_else(ever_married == "Yes", 1, 0), Residence_type = if_else(Residence_type == "Rural", 0, 1), smoking_status = if_else(smoking_status == "never smoked", 0, if_else(smoking_status == "formerly smoked", 1, if_else(smoking_status == "smokes", 2, 3))))
+summary(clean_data)
+glimpse(clean_data)
+
+# Handling missing values
+
+miss_scan_count(data = data, search = list("N/A", "Unknown"))
+
+# There are 201 "N/A" values in the bmi column that likely caused this column
+# to be parsed as character, although it should be numerical.  
+#  replacing those values with actual NAs.
+# lot of "Unknown" values in smoking_status  
+#  We see that we have 1544 unknown values for smoking status and
+# replace those values with
+# NAs.
+
+clean_data <- replace_with_na(data = clean_data, replace = list(bmi = c("N/A"), smoking_status = c(3))) %>% mutate(bmi = as.numeric(bmi))
+
+with(clean_data, {
+  colors <- ifelse(stroke == 1, "red", "blue")  # Assuming stroke = 1 for stroke cases and 0 for non-stroke cases
+  scatterplot3d(
+    x = age,  y = hypertension, z = avg_glucose_level,
+    color = colors,
+    main = "Stroke Prediction Scatterplot",
+    xlab = "Age", ylab = "Hypertension", zlab = "Average Glucose Level",
+    xlim = c(min(age), max(age)),
+    ylim = c(0, 1), # Assuming hypertension is a binary variable (0 or 1)
+    zlim = c(min(avg_glucose_level), max(avg_glucose_level))
+  )
+})
+
+
+
+# Split the data into training and testing sets (e.g., 80% training, 20% testing)
+set.seed(99)
+index <- createDataPartition(clean_data$stroke, p = 0.8, list = FALSE)
+train_data <- clean_data[index, ]
+test_data <- clean_data[-index, ]
+
+# Normalize numerical features
+scaler <- preProcess(train_data[c("age", "avg_glucose_level", "bmi")], method = c("center", "scale"))
+train_data[c("age", "avg_glucose_level", "bmi")] <- predict(scaler, train_data[c("age", "avg_glucose_level", "bmi")])
+test_data[c("age", "avg_glucose_level", "bmi")] <- predict(scaler, test_data[c("age", "avg_glucose_level", "bmi")])
+
+# Handle missing values (if any)
+train_data[is.na(train_data)] <- 0
+test_data[is.na(test_data)] <- 0
+# Update the input shape in your LSTM layer to match your data
+
+
+
+
+# Define and train a neural network model using Keras
+nn_model <- keras_model_sequential() %>%
+  layer_dense(units = 128, activation = "relu", input_shape = n_features) %>%
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+# Compile the model
+nn_model %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_adam(lr = 0.001),
+  metrics = "accuracy"
+)
+
+# Train the model
+nn_model %>% fit(
+  x = as.matrix(train_data[, -10]),  # Features only
+  y = train_data$stroke,
+  epochs = 20,
+  batch_size = 32
+)
+
+# Make predictions using the neural network model
+nn_predictions <- nn_model %>% predict(as.matrix(test_data[, -10]))
+library(ggplot2)
+
+# Convert confusion matrix to data frame for plotting
+conf_matrix_df <- as.data.frame.matrix(conf_matrix)
+conf_matrix_df <- cbind(Actual = rownames(conf_matrix_df), conf_matrix_df)
+conf_matrix_df <- gather(conf_matrix_df, key = "Predicted", value = "Count", -Actual)
+
+# Plot confusion matrix heatmap
+ggplot(conf_matrix_df, aes(x = Predicted, y = Actual, fill = Count)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = Count), color = "black") +
+  scale_fill_gradient(low = "coral", high = "lightblue") +
+  labs(title = "Confusion Matrix",
+       x = "Predicted",
+       y = "Actual") +
+ 
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),  # Center-aligned and bold title
+    axis.text.x = element_text(face = "bold"),  # Bold x-axis labels
+    axis.text.y = element_text(face = "bold", size = 12),  # Bold y-axis labels with larger font size
+    axis.title.x = element_text(size = 14),  # Adjust x-axis title font size
+    axis.title.y = element_text(size = 14)   # Adjust y-axis title font size
+  )
+
+
+# Calculate ROC curve
+roc_curve <- roc(test_data$stroke, nn_predictions)
+
+# Plot ROC curve
+plot(roc_curve, main = "ROC Curve", col = "blue")
+# If you're using Keras, you can visualize your model's architecture using plot_model
+# Assuming your nn_model is a Keras model
+# Install and load the DiagrammeR package
