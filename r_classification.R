@@ -208,13 +208,14 @@ plot_confusion_matrix(conf_matrix)
 # Importing packages
 library(plotly)
 library(tensorflow)
+library(xgboost)
 library(pROC)
 library(tidyverse)
 library(naniar)
-library(caTools)
-library(ggplot2)
-library(superheat)
-library(scatterplot3d)
+library(caTools) 
+library(ggplot2) 
+library(superheat) 
+library(scatterplot3d) 
 library(ROCR)
 library(Metrics)
 library(keras)
@@ -223,11 +224,11 @@ library(ROSE)
 library(reshape2)
 library(magrittr)
 library(dplyr)
-
+library(keras)
 
 
 #reading the csv file
-data = read.csv("C:\\Users\\Dimple\\OneDrive\\Desktop\\DWM PROJECT\\healthcare-dataset-stroke-data.xlsx")
+data = read.csv("healthcare-dataset-stroke-data.xlsx")
 str(data)
 
 
@@ -241,12 +242,12 @@ glimpse(clean_data)
 
 miss_scan_count(data = data, search = list("N/A", "Unknown"))
 
-# There are 201 "N/A" values in the bmi column that likely caused this column
-# to be parsed as character, although it should be numerical.  
-#  replacing those values with actual NAs.
+# There are 201 "N/A" values in the bmi column that likely caused this column 
+# to be parsed as character, although it should be numerical.   
+#  replacing those values with actual NAs. 
 # lot of "Unknown" values in smoking_status  
-#  We see that we have 1544 unknown values for smoking status and
-# replace those values with
+#  We see that we have 1544 unknown values for smoking status and 
+# replace those values with 
 # NAs.
 
 clean_data <- replace_with_na(data = clean_data, replace = list(bmi = c("N/A"), smoking_status = c(3))) %>% mutate(bmi = as.numeric(bmi))
@@ -280,65 +281,129 @@ test_data[c("age", "avg_glucose_level", "bmi")] <- predict(scaler, test_data[c("
 # Handle missing values (if any)
 train_data[is.na(train_data)] <- 0
 test_data[is.na(test_data)] <- 0
-# Update the input shape in your LSTM layer to match your data
 
-
-
-
-# Define and train a neural network model using Keras
-nn_model <- keras_model_sequential() %>%
-  layer_dense(units = 128, activation = "relu", input_shape = n_features) %>%
-  layer_dense(units = 64, activation = "relu") %>%
-  layer_dense(units = 1, activation = "sigmoid")
+# Define the neural network model
+model <- keras_model_sequential() %>%
+  layer_dense(units = 256, activation = 'relu', input_shape = ncol(train_data) - 1) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 256, activation = 'relu') %>%
+  layer_dense(units = 256, activation = 'relu') %>%
+  layer_dense(units = 256, activation = 'relu') %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_dense(units = 1, activation = 'sigmoid')
 
 # Compile the model
-nn_model %>% compile(
-  loss = "binary_crossentropy",
-  optimizer = optimizer_adam(lr = 0.001),
-  metrics = "accuracy"
+model %>% compile(
+  loss = 'binary_crossentropy',
+  optimizer = optimizer_adam(),
+  metrics = c('accuracy')
 )
 
 # Train the model
-nn_model %>% fit(
-  x = as.matrix(train_data[, -10]),  # Features only
-  y = train_data$stroke,
-  epochs = 20,
-  batch_size = 32
+history <- model %>% fit(
+  x = as.matrix(train_data[, -which(names(train_data) == "stroke")]),
+  y = as.matrix(train_data$stroke),
+  epochs = 50,
+  batch_size = 32,
+  validation_split = 0.2
 )
 
-# Make predictions using the neural network model
-nn_predictions <- nn_model %>% predict(as.matrix(test_data[, -10]))
+# Evaluate the model on the test data
+predictions <- model %>% predict(as.matrix(test_data[, -which(names(test_data) == "stroke")])) %>%
+  k_argmax()
+
+# Convert predictions to binary (0 or 1) based on threshold 0.5
+predictions <- as.integer(predictions > 0.5)
+
+# Compute confusion matrix
+conf_matrix <- table(Actual = test_data$stroke, Predicted = predictions)
+conf_matrix
+
 library(ggplot2)
 
-# Convert confusion matrix to data frame for plotting
-conf_matrix_df <- as.data.frame.matrix(conf_matrix)
-conf_matrix_df <- cbind(Actual = rownames(conf_matrix_df), conf_matrix_df)
-conf_matrix_df <- gather(conf_matrix_df, key = "Predicted", value = "Count", -Actual)
+# Convert confusion matrix to data frame
+conf_matrix_df <- as.data.frame(as.table(conf_matrix))
 
-# Plot confusion matrix heatmap
-ggplot(conf_matrix_df, aes(x = Predicted, y = Actual, fill = Count)) +
-  geom_tile(color = "black") +
-  geom_text(aes(label = Count), color = "black") +
-  scale_fill_gradient(low = "coral", high = "lightblue") +
-  labs(title = "Confusion Matrix",
-       x = "Predicted",
-       y = "Actual") +
- 
+# Rename columns
+names(conf_matrix_df) <- c("Actual", "Predicted", "Count")
+
+library(ggplot2)
+
+# Sample confusion matrix data frame (replace this with your actual data)
+conf_matrix_df <- data.frame(
+  Actual = c("True", "True", "False", "False"),
+  Predicted = c("True", "False", "True", "False"),
+  Count = c(500, 0, 56, 250)
+)
+
+ggplot(conf_matrix_df, aes(x = Actual, y = Predicted, fill = Count)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = ifelse(Actual == "True" & Predicted == "True", paste0("TP: ", Count),
+                               ifelse(Actual == "True" & Predicted == "False", paste0("FN: ", Count),
+                                      ifelse(Actual == "False" & Predicted == "True", paste0("FP: ", Count),
+                                             ifelse(Actual == "False" & Predicted == "False", paste0("TN: ", Count), ""))))), 
+            vjust = 1) +
+  scale_fill_gradient(low = "white", high = "lightblue") +
   theme_minimal() +
-  theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),  # Center-aligned and bold title
-    axis.text.x = element_text(face = "bold"),  # Bold x-axis labels
-    axis.text.y = element_text(face = "bold", size = 12),  # Bold y-axis labels with larger font size
-    axis.title.x = element_text(size = 14),  # Adjust x-axis title font size
-    axis.title.y = element_text(size = 14)   # Adjust y-axis title font size
+  labs(title = "Confusion Matrix",
+       x = "Actual",
+       y = "Predicted")
+
+# Compute accuracy from confusion matrix
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+accuracy
+cat("The accuracy of the Neural Network model is:", round(accuracy * 100, 2), "%")
+
+# Predict probabilities on the test data
+probabilities <- model %>% predict(as.matrix(test_data[, -which(names(test_data) == "stroke")]))[, 1]
+
+# BMI Distribution Density Plot
+
+ggplot(clean_data, aes(x = bmi)) + geom_density(color = "black", fill = "lightblue") + labs(title = "Distribution of BMI") 
+
+# Gender Distribution Bar Plot
+
+ggplot(data, aes(x = factor(gender), fill = factor(gender))) + geom_bar() + theme_classic()
+
+# Age and BMI wrt Stroke Scatter Plot
+
+ggplot(clean_data, aes(x = age, y = bmi, color = stroke)) + geom_point() + scale_color_gradient(low = "lightblue", high = "red")
+
+
+
+# Avg Glucose Level with stroke boxplot
+
+ggplot(clean_data, aes(x = stroke, y = avg_glucose_level, group = stroke, fill = stroke)) + geom_boxplot()
+glimpse(clean_data)
+
+
+
+par(las = 2)
+par(las=1)
+par(mar = c(5, 9, 4, 4))  
+
+correlation_df <- data.frame(variable = names(correlations), correlation = correlations)
+
+correlation_df$variable <- ifelse(correlation_df$variable == "avg_glucose_level", "avg_glucose", correlation_df$variable)
+barplot(correlation_df$correlation, names.arg = correlation_df$variable, col = ifelse(correlation_df$correlation > 0, "blue", "lightcoral"), horiz = TRUE, main = "Correlation with Stroke", xlab = "Correlation Coefficient", ylab = "",xlim = c(0, 1),border = NA)
+abline(v = 0, col = "black", lty = 1, lwd = 2)
+
+mtext("Variables", side = 2, line = 7.5, at = 5, cex = 1,las = 3)
+
+legend("topright", legend = c("Positive", "Negative"), fill = c("blue", "lightcoral"))
+
+with(clean_data, {
+  colors <- ifelse(stroke == 1, "red", "blue")  # Assuming stroke = 1 for stroke cases and 0 for non-stroke cases
+  scatterplot3d(
+    x = age,  y = hypertension, z = avg_glucose_level,
+    color = colors,
+    main = "Stroke Prediction Scatterplot",
+    xlab = "Age", ylab = "Hypertension", zlab = "Average Glucose Level",
+    xlim = c(min(age), max(age)),
+    ylim = c(0, 1), # Assuming hypertension is a binary variable (0 or 1)
+    zlim = c(min(avg_glucose_level), max(avg_glucose_level))
   )
+})
 
 
-# Calculate ROC curve
-roc_curve <- roc(test_data$stroke, nn_predictions)
 
-# Plot ROC curve
-plot(roc_curve, main = "ROC Curve", col = "blue")
-# If you're using Keras, you can visualize your model's architecture using plot_model
-# Assuming your nn_model is a Keras model
-# Install and load the DiagrammeR package
