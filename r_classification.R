@@ -1,106 +1,181 @@
-# Load required libraries
+#installing required packages
+install.packages(c("plotly", "tensorflow", "pROC", "tidyverse", "naniar", "caTools", "caret", "ROSE", "reshape2", "magrittr", "dplyr", "keras", "randomForest", "Metrics", "ggplot2", "scatterplot3d", "superheat", "ROCR", "class", "skimr", "gridExtra", "corrplot", "ggcorrplot"))
+install.packages("party")
+
+#importing packages
+library(plotly)
+library(tensorflow)
+library(pROC)
 library(tidyverse)
-library(randomForest)
-library(cluster)
+library(naniar)
+library(caTools)
 library(caret)
+library(ROSE)
+library(reshape2)
+library(magrittr)
+library(dplyr)
+library(keras)
+library(randomForest)
+library(Metrics)
 library(ggplot2)
+library(skimr)
 library(gridExtra)
+library(corrplot)
+library(ggcorrplot)
+library(party)
 
-# Set seed for reproducibility
-set.seed(123)
 
-# Load the data
-stroke_data <- read.csv("C:\Users\charv\Downloads\stroke_data.csv")
+#reading csv file
+data <- read.csv("C:/Users/charv/Downloads/stroke_data.csv")
 
-# Data preprocessing
-# Drop ID column
-stroke_data <- stroke_data[-1]
+summary(data)
+glimpse(data)
 
-# Convert categorical variables to factors
-stroke_data$gender <- as.factor(stroke_data$gender)
-stroke_data$ever_married <- as.factor(stroke_data$ever_married)
-stroke_data$work_type <- as.factor(stroke_data$work_type)
-stroke_data$Residence_type <- as.factor(stroke_data$Residence_type)
-stroke_data$smoking_status <- as.factor(stroke_data$smoking_status)
+# Converting character values to numeric values
+clean_data <- data %>% 
+  mutate(gender = if_else(gender == "Female", 0, if_else(gender == "Male", 1, 2)), 
+         ever_married = if_else(ever_married == "Yes", 1, 0), 
+         Residence_type = if_else(Residence_type == "Rural", 0, 1), 
+         smoking_status = if_else(smoking_status == "never smoked", 0, 
+                                  if_else(smoking_status == "formerly smoked", 1, 
+                                          if_else(smoking_status == "smokes", 2, 3))))
 
-# Handle missing values
-stroke_data[is.na(stroke_data)] <- 0  # Replace NA with 0 for simplicity
+summary(clean_data)
+glimpse(clean_data)
 
-# Split the data into training and testing sets
-set.seed(123) # For reproducibility
-train_index <- sample(1:nrow(stroke_data), 0.7 * nrow(stroke_data))
-train_data <- stroke_data[train_index, ]
-test_data <- stroke_data[-train_index, ]
 
-# Define target variable
-target <- "stroke"
+#scanning for missing values in the dataset ( N/A and Unknown Strings to identify missing values)
+miss_scan_count(data = clean_data, search = list("N/A", "Unknown"))
 
-# Random Forest Implementation Steps:
+#replacing N/A and Unknown values with NA
+#there is a value ‘N/A’ in bmi in 201 rows.
+clean_data <- replace_with_na(data = clean_data, replace = list(bmi = c("N/A"), smoking_status = c(3))) %>% 
+#BMI column is in character format hence onverting it to numeric
+mutate(bmi = as.numeric(bmi)) 
 
-# Set parameters
-n <- nrow(train_data)
-p <- ncol(train_data) - 1  # Exclude target variable
-m <- round(sqrt(p))  # Square root of total features is often used
-ntree <- 500  # Number of trees
 
-# Initialize an empty list to store decision trees
-trees <- list()
+# Convert stroke to factor
+clean_data$stroke <- as.factor(clean_data$stroke)
 
-# Train the Random Forest model
-for (i in 1:ntree) {
-  # Random Sampling
-  bootstrap_sample <- sample(1:n, replace = TRUE, size = n)
+#oversampling data to balance the dataset
+oversampled_data <- ovun.sample(stroke ~ ., data = clean_data, method = "over", N = nrow(clean_data), seed = 1234)$data
+
+
+#splitting the data into training and testing sets
+set.seed(99)
+index <- createDataPartition(oversampled_data$stroke, p = 0.8, list = FALSE)
+train_data <- oversampled_data[index, ]
+test_data <- oversampled_data[-index, ]
+
+#normalization of numerical features 
+scaler <- preProcess(train_data[c("age", "avg_glucose_level", "bmi")], method = c("center", "scale"))
+train_data[c("age", "avg_glucose_level", "bmi")] <- predict(scaler, train_data[c("age", "avg_glucose_level", "bmi")])
+test_data[c("age", "avg_glucose_level", "bmi")] <- predict(scaler, test_data[c("age", "avg_glucose_level", "bmi")])
+
+#handling missing values
+train_data[is.na(train_data)] <- 0
+test_data[is.na(test_data)] <- 0
+
+# Random Forest classification model
+rf_mod <- randomForest(formula = stroke ~ ., data = train_data, ntree = 100)
+
+# Predictions
+rf_predictions <- predict(rf_mod, test_data)
+rf_predictions_prob <- predict(rf_mod, test_data, type = "prob")
+rf_predictions_binary <- ifelse(rf_predictions_prob[,2] > 0.5, 1, 0)
+
+# Calculate confusion matrix
+conf_matrix <- confusionMatrix(rf_predictions, test_data$stroke)
+print(conf_matrix)
+
+# Extract and print accuracy
+accuracy <- conf_matrix$overall['Accuracy']
+precision <- conf_matrix$byClass['Pos Pred Value']
+recall <- conf_matrix$byClass['Sensitivity']
+f1_score <- 2 * (precision * recall) / (precision + recall)
+print(paste("Accuracy of Random Forest model:", round(accuracy * 100, 2), "%"))
+print(paste("Precision:", round(precision, 3)))
+print(paste("Recall:", round(recall, 2)))
+print(paste("F1 Score:", round(f1_score, 2)))
+
+# Plotting confusion matrix with TP and TN values
+plot_confusion_matrix <- function(conf_matrix) {
+  TP <- conf_matrix$table[2, 2]
+  TN <- conf_matrix$table[1, 1]
+  FP <- conf_matrix$table[1, 2]
+  FN <- conf_matrix$table[2, 1]
   
-  # Random Feature Selection
-  selected_features <- sample(1:p, size = m)
-  
-  # Decision Tree Construction
-  tree <- randomForest(
-    formula = as.factor(stroke) ~ .,
-    data = train_data[bootstrap_sample, selected_features],
-    ntree = 1,
-    importance = FALSE,
-    do.trace = FALSE
+  conf_matrix_df <- data.frame(
+    Reference = rep(row.names(conf_matrix$table), ncol(conf_matrix$table)),
+    Prediction = rep(colnames(conf_matrix$table), each = nrow(conf_matrix$table)),
+    Freq = as.vector(conf_matrix$table),
+    TP = ifelse(row.names(conf_matrix$table) == "1", conf_matrix$table[2, 2], 0),
+    TN = ifelse(colnames(conf_matrix$table) == "1", conf_matrix$table[1, 1], 0),
+    FP = ifelse(row.names(conf_matrix$table) == "1", conf_matrix$table[1, 2], 0),
+    FN = ifelse(colnames(conf_matrix$table) == "1", conf_matrix$table[2, 1], 0)
   )
   
-  # Store the decision tree
-  trees[[i]] <- tree
+  plot_ly(data = conf_matrix_df, 
+          x = ~Reference, 
+          y = ~Prediction, 
+          z = ~Freq, 
+          type = "heatmap", 
+          colors = c("#FFA07A", "#20B2AA")) %>%
+    add_annotations(
+      text = ~paste("Frequency: ", Freq),
+      x = ~Reference,
+      y = ~Prediction,
+      showarrow = FALSE
+    ) %>%
+    layout(title = "Confusion Matrix",
+           xaxis = list(title = "Actual"),
+           yaxis = list(title = "Prediction"))
 }
 
-# Ensemble Prediction (Voting)
-rf_pred <- matrix(0, nrow = nrow(test_data), ncol = ntree)
-for (i in 1:ntree) {
-  rf_pred[, i] <- predict(trees[[i]], newdata = test_data)
-}
-rf_pred <- apply(rf_pred, 1, function(x) {
-  as.factor(names(sort(table(x), decreasing = TRUE)[1]))
-})
+plot_confusion_matrix(conf_matrix)
+# ROC curve
+roc_curve <- roc(test_data$stroke, as.numeric(rf_predictions_prob[,2]))
+roc_auc <- auc(roc_curve)
 
-# Evaluate the Random Forest model
-accuracy_rf <- mean(rf_pred == test_data[[target]])
-cat("Accuracy of Random Forest model:", accuracy_rf, "\n")
+# Plotting ROC curve
+plot(roc_curve, main = "ROC Curve for Random Forest", col = "blue", lwd = 2, print.auc = TRUE)
 
-# Davies-Bouldin Index for Random Forest
-rf_clusters <- as.integer(rf_pred)
-db_rf <- cluster.stats(dist(test_data[, 1:2]), rf_clusters)$dunn
-cat("Davies-Bouldin Index for Random Forest:", db_rf, "\n")
+p1<-ggplot(data,aes(x=gender,fill=gender))+geom_bar(col="black")+geom_text(aes(label=..count..),stat = "Count", vjust= 1.5)+ggtitle("Gender Distribution")
+p2<-ggplot(clean_data,aes(x=" ",fill=hypertension,group=stroke))+geom_bar(position = "fill",col="black")+coord_polar("y", start=0)+ggtitle("Distribution of Hypertension") + scale_fill_manual(values = c("#FFA07A", "#20B2AA"))
+p3<-ggplot(clean_data,aes(x="",fill=heart_disease))+geom_bar(position = "fill", col="black")+coord_polar("y")+ggtitle("Distribution of Heart Disease")
+p4<-ggplot(df_stroke,aes(x=ever_married,fill=ever_married))+geom_bar(col="black")+geom_text(aes(label=..count..),stat = "Count", vjust= 1.5)+ggtitle("Marriage Status")
+p5<-ggplot(df_stroke,aes(x="",fill=Residence_type))+geom_bar(position = "fill")+coord_polar("y", start = 0)+ggtitle("Distribution of Residence Type")
+p6<-ggplot(df_stroke,aes(x="",fill=stroke))+geom_bar(position = "fill")+coord_polar("y", start = 0)+ggtitle("Distribution of Stroke occurence")
+grid.arrange(p1,p2,p3,p4,p5,p6, ncol=2)
 
-# Confusion Matrix for Random Forest
-confusionMatrix(rf_pred, test_data[[target]])
+p8 <- ggplot(data, aes(x=age, fill=stroke)) +geom_histogram(binwidth=5, alpha=0.7) +ggtitle("Age Distribution by Stroke") +theme_minimal()
+p8
 
-# Plot Random Forest variable importance
-varImpPlot(randomForest(as.factor(stroke) ~ ., data = train_data, ntree = ntree, importance = TRUE), main = "Random Forest Variable Importance")
+p9 <- ggplot(data, aes(x=avg_glucose_level, y=bmi, color=stroke)) +geom_point(alpha=0.7) +ggtitle("Avg Glucose Level vs BMI") +theme_minimal()
+p9
 
-# Plot decision boundaries for Random Forest
-plot2 <- ggplot(train_data, aes(x = train_data[, 1], y = train_data[, 2], color = as.factor(Kmeans_Cluster))) +
-  geom_point() +
-  geom_point(data = test_data, aes(x = test_data[, 1], y = test_data[, 2], color = as.factor(rf_clusters + 1)), pch = 20) +
-  ggtitle("Random Forest Decision Boundaries") +
-  labs(color = "Cluster") +
-  theme_minimal()
 
-# Display the plots side by side
-grid.arrange(plot2, ncol = 1)
+# Feature Importance
+importance <- importance(rf_mod)
+varImportance <- data.frame(Variables = rownames(importance), Importance = round(importance[ , 'MeanDecreaseGini'], 2))
+varImportance <- varImportance[order(-varImportance$Importance), ]
+ggplot(varImportance, aes(x = reorder(Variables, Importance), y = Importance)) +
+  geom_bar(stat="identity", fill="steelblue") +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Variable Importance Plot (Gini impurity)", x = "Variables", y = "Importance")
+
+# Feature Importance
+importance <- importance(rf_mod)
+varImportance <- data.frame(Variables = rownames(importance), Importance = round(importance[ , 'MeanDecreaseGini'], 2))
+varImportance <- varImportance[order(-varImportance$Importance), ]
+
+# Top 5 major risk factors
+major_risk_factors <- head(varImportance, 5)
+print("Major Risk Factors")
+print(major_risk_factors)
+
+
 
 #KNN
 # Install and load required packages
